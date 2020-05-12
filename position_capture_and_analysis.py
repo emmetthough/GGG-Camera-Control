@@ -1,5 +1,5 @@
 # Bead position tracking and analysis script
-# Emmett Hough, February 2020
+# Emmett Hough, April 2020
 
 import cv2
 import os, os.path
@@ -12,6 +12,8 @@ from pymba import Vimba
 from typing import Optional
 from pymba import Frame
 from tqdm import tqdm
+import shutil
+from pixel_data import Pixel_Data
 
 imageDir = r"C:\Users\Beads\Documents\EmmettH\data"
 ROI_size = 100
@@ -19,23 +21,32 @@ MAX_HEIGHT = 480
 MAX_WIDTH = 640
 
 def startup():
-    print("OpenCV version: " + cv2.__version__)
-    print()
-    print("Position Analysis v1.0 \nEmmett Hough, Gratta Gravity Group")
+    # Runs initial greeting and initializes trial params
+    # Returns float frame rate, int duration, bool roi, string trial directory name
+    
+    # print("OpenCV version: " + cv2.__version__)
+    # print()
+    print("Position Analysis v210 \nEmmett Hough, Gratta Gravity Group")
     print()
     os.chdir("data")
     print("Current directory: ", os.getcwd())
     trialDir = input("Trial directory name: ")
-    os.mkdir(os.path.join(imageDir, trialDir))
-    os.chdir(trialDir)
-    frame_rate = float(input('Frame Rate: '))
-    duration = int(input("Duration: "))
-    print()
-    roi = get_bool(input("Set ROI? (Y/N): "))
+    if trialDir != 'load':
+        os.mkdir(os.path.join(imageDir, trialDir))
+        os.chdir(trialDir)
+        frame_rate = float(input('Frame Rate: '))
+        duration = int(input("Duration: "))
+        print()
+        roi = get_bool(input("Set ROI? (Y/N): "))
+    else:
+        frame_rate = 1
+        duration = 1
+        roi = False
 
     return [frame_rate, duration, roi, trialDir]
 
 def set_camera_defaults():
+    # Resets frame from ROI to default (full frame)
     with Vimba() as vimba:
         vimba.startup()
         camera = vimba.camera(0)
@@ -49,18 +60,21 @@ def set_camera_defaults():
         camera.close()
 
 def get_bool(input):
+    # Helper function, intuitive
     if input[0].lower() == 'y':
         return True
     else:
         return False
 
 def save_frame(frame: Frame):
+    # Callable for camera.arm(), saves frame as numpy file
     frame_num = 'frame_{}'.format(frame.data.frameID)
     print(frame_num)
     image = frame.buffer_data_numpy()
     np.save(frame_num, image)
 
 def aquire_frames(frame_rate, duration):
+    # Handles frame capture, according to params frame_rate and duration
     with Vimba() as vimba:
         vimba.startup()
         camera = vimba.camera(0)
@@ -80,6 +94,11 @@ def aquire_frames(frame_rate, duration):
         camera.close()
 
 def set_roi():
+    # Handles region of interest selection
+    # Finds center of bead via averaging one frame and argmax to pick pixel
+    # Vimba only accepts certain values of offsets, as found through Vimba Viewer
+    # Assumes full frame input (i.e. no ROI set before this funtion is called)
+    # Might need additional support for bead in corner of frame
     print()
     print('Setting ROI...\n')
     with Vimba() as vimba:
@@ -134,19 +153,17 @@ def create_image_path():
 def load_images(image_path_list):
     # Takes a list of paths to images and returns a dictionary of the following structure:
     # key: "image name", value: numpy array
-    images = {}
+    images = []
     for img_path in image_path_list:
-        name = img_path.split('.')[0]
-        name = name.split('/')[-1]
-        # Read image
-
+        print(img_path.split('_')[2])
         img = np.load(img_path)
-        images[name] = img
-    
+        images.append(img)
+    print()
     return images
 
 def extract_mean(image_dict, plt_show=False):
-
+    # Given frames in image_dict, returns position dict with the x,y position of the max of the mean 
+    # i.e. extracts bead position and returns dict
     position_dict = {}
     for image_name in image_dict.keys():
         images = image_dict[image_name]
@@ -186,6 +203,8 @@ def track_position(position_dict, plt_show=False):
     plt.legend()
     if plt_show:
         plt.show()
+
+# BELOW TO BE REPLACED WITH PIXEL DATA CLASS
 
 def load_pixel_dict(images):
     # return: dict with -> key: (x,y) pixel identifier, value: [] list of values for each frame
@@ -235,30 +254,52 @@ def psd_max(max_tuple, psd_dict):
     plt.title('Max Pixel PSD')
     plt.show()
 
-def main():
+
+def data_analysis(image_list):
+
+    data = Pixel_Data(image_list)
+    data.track_mean()
+    data.plot_mean()
+    data.bead_temporal_fft(plot=True)
+
+
+
+
+def main(delete=True):
+    set_camera_defaults()
     trial_params = startup()
     trial_num = 0
     trialDir = "trial_" + str(trial_num)
     while True:
-        os.mkdir(trialDir)
-        os.chdir(trialDir)
-        if trial_params[2]:
-            set_roi()
-        aquire_frames(trial_params[0], trial_params[1])
+        if trial_params[3] == 'load':
+            trialDir = input('Load data directory: ')
+            os.chdir(trialDir)
+            delete = False
+        else:
+            os.mkdir(trialDir)
+            os.chdir(trialDir)
+            if trial_params[2]:
+                set_roi()
+            aquire_frames(trial_params[0], trial_params[1])
         images = load_images(create_image_path())
-        positions = extract_mean(images, plt_show=False)
-        psds = load_psd_dict(load_pixel_dict(images), trial_params[0])
+        data_analysis(images)
+        # positions = extract_mean(images, plt_show=False)
+        # psds = load_psd_dict(load_pixel_dict(images), trial_params[0])
         # psd_max(center, psds)
         # track_position(positions, plt_show=False)
         set_camera_defaults()
+        os.chdir("..")
+
         new_trial = get_bool(input("Trial complete. Another? (Y/N): "))
+        if delete:
+            shutil.rmtree(trialDir)
         if new_trial:
             trial_num += 1
             trialDir = "trial_" + str(trial_num)
         else:
             print("Sounds good chief, have a super-duper day!")
             break
-        os.chdir("..")
+
 
 if __name__ == '__main__':
     main()
