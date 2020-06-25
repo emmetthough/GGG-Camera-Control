@@ -1,7 +1,7 @@
 # Pixel Data Class
-# v1.0, April 30, 2020
+# v2.0, June 25, 2020
 import numpy as np
-from numpy.fft import fft
+from numpy.fft import rfft
 import matplotlib.pyplot as plt
 
 class Pixel_Data:
@@ -77,6 +77,9 @@ class Pixel_Data:
         return (x_means, y_means)
 
     def plot_mean(self):
+        """
+        Plots argmax bead position approximation over the dataset
+        """
         times = np.arange(self.num_frames)
         x_means, y_means = self.bead_positions
         plt.plot(times, x_means, label='x')
@@ -87,28 +90,28 @@ class Pixel_Data:
         plt.show()
 
     def bead_temporal_fft(self, plot=False):
+        """
+        Plots the temporal fft for the bead positions, as given by self.bead_positions
+        Precondition: track_mean has been called
+        """
+        try:
+            freqs = np.linspace(0,int(self.num_frames/2),(int(self.num_frames/2))+1) 
+            x_means, y_means = self.bead_positions
 
-        freqs = np.arange(self.num_frames)
-        x_means, y_means = self.bead_positions
+            x_fft = rfft(x_means)
+            x_psd = (x_fft * x_fft.conj()).real
+            y_fft = rfft(y_means)
+            y_psd = (y_fft * y_fft.conj()).real
 
-        x_fft = fft(x_means)
-        y_fft = fft(y_means)
-
-        print(np.max(x_fft))
-
-        max_y = np.max([np.max(x_fft), np.max(y_fft)])
-
-        if plot:
-            plt.plot(freqs, x_fft, label='x')
-            plt.plot(freqs, y_fft, label='y')
-            plt.xscale('log')
-            plt.xlabel('Frequency [units??]'); plt.ylabel('Amplitude [arb.]')
-            plt.ylim(0, 1.5*max_y)
-            plt.legend()
-            plt.title('Temporal FFT of means', fontsize=20)
-            plt.show()
-
-        return x_fft,y_fft
-
-
-            
+            if plot:
+                plt.loglog(freqs,x_psd, label='x')
+                plt.loglog(freqs,y_psd, label='y')
+                plt.xlabel('Frequency [units??]'); plt.ylabel('Amplitude [arb.]')
+                # plt.ylim(0, 1.5*max_y)
+                plt.legend()
+                plt.title('Temporal FFT of means', fontsize=20)
+                plt.show()
+                return x_psd,y_psd
+        except:
+            print('No bead position data! Call "track_mean" submethod first.')
+            return        
