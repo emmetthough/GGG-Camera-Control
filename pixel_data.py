@@ -111,7 +111,7 @@ class Pixel_Data:
                 plt.legend()
                 plt.title('Temporal FFT of means', fontsize=20)
                 plt.show()
-                return x_psd,y_psd
+            return freqs,x_psd,y_psd
         except:
             print('No bead position data! Call "track_mean" submethod first.')
             return        
